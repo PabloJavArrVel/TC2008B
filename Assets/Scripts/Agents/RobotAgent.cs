@@ -1,13 +1,18 @@
-public enum RobotState
-{
-    Idle,
-    Moving
-}
+using System;
+using System.Collections.Generic;
 
 public class RobotAgent
 {
-    public int Id;
-    public Cell CurrentCell;
+    public int Id { get; }
+    public Cell CurrentCell { get; private set; }
+
+    public RobotState State { get; private set; } = RobotState.Idle;
+
+    public bool IsCarrying { get; private set; }
+
+    private Queue<Cell> path = new();
+
+    public event Action<RobotAgent> OnTaskFinished;
 
     public RobotAgent(int id, Cell startCell)
     {
@@ -16,10 +21,81 @@ public class RobotAgent
         startCell.OccupyingRobot = this;
     }
 
-    public void MoveTo(Cell target)
+    // =====================
+    // MANAGER API
+    // =====================
+
+    public void AssignPath(Queue<Cell> newPath, bool carrying)
     {
-        CurrentCell.OccupyingRobot = null;
-        target.OccupyingRobot = this;
-        CurrentCell = target;
+        path = newPath ?? new Queue<Cell>();
+        IsCarrying = carrying;
+
+        State = path.Count > 0
+            ? RobotState.Tasked
+            : RobotState.Idle;
+    }
+
+    // =====================
+    // PERCEIVE → DECIDE
+    // =====================
+
+    public MoveIntent Step()
+    {
+        var p = Perceive();
+        return Decide(p);
+    }
+
+    private Perception Perceive()
+    {
+        if (State != RobotState.Tasked || path.Count == 0)
+            return new Perception { PathFinished = true };
+
+        var next = path.Peek();
+
+        return new Perception
+        {
+            PathFinished = false,
+            NextCell = next,
+            NextIsBlocked =
+                next.IsShelf ||
+                next.OccupyingRobot != null
+        };
+    }
+
+    private MoveIntent Decide(Perception p)
+    {
+        if (p.PathFinished)
+        {
+            if (State == RobotState.Tasked)
+            {
+                State = RobotState.Idle;
+                OnTaskFinished?.Invoke(this);
+            }
+
+            return Stay();
+        }
+
+        if (p.NextIsBlocked)
+            return Stay();
+
+        return new MoveIntent
+        {
+            Robot = this,
+            From = CurrentCell,
+            To = p.NextCell
+        };
+    }
+
+    MoveIntent Stay() =>
+        new MoveIntent { Robot = this, From = CurrentCell, To = null };
+
+    // =====================
+    // CALLED BY WAREHOUSE
+    // =====================
+
+    public void CommitMove(Cell newCell)
+    {
+        CurrentCell = newCell;
+        path.Dequeue();
     }
 }

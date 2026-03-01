@@ -1,71 +1,140 @@
 using UnityEngine;
 using System.Collections.Generic;
+using System.Linq;
 
 public class GameController : MonoBehaviour
 {
-    public int rows = 20;
-    public int cols = 20;
+    [Header("Simulation")]
+    [SerializeField] int k = 20;
+    [SerializeField] int robotCount = 5;
 
-    public int robotCount = 5;
-    public int crateCount = 20;
+    [Header("Timing")]
+    [SerializeField] float stepInterval = 0.3f;
 
+    [Header("Prefabs")]
     public GameObject robotPrefab;
     public GameObject cratePrefab;
     public GameObject floorPrefab;
 
     Warehouse warehouse;
+    WarehouseManager manager;
 
     Dictionary<RobotAgent, GameObject> robotViews = new();
     Dictionary<Crate, GameObject> crateViews = new();
 
+    // tracks visual stacks at drop cells
+    Dictionary<Cell, List<GameObject>> stackViews = new();
+
+    float timer;
+
+    // =========================
+    // START
+    // =========================
+
     void Start()
     {
-        warehouse = new Warehouse(rows, cols);
-        warehouse.Initialize(robotCount, crateCount);
+        int size = Mathf.CeilToInt(Mathf.Sqrt(k * 10f));
 
-        GenerateVisualGrid();
-        GenerateFloor();
+        warehouse = new Warehouse(size, size);
+        warehouse.Initialize(robotCount, k);
+
+        manager = new WarehouseManager(warehouse);
+
+        SpawnFloor(size);
         SpawnVisuals();
     }
 
-    void GenerateFloor()
+    // =========================
+    // SIMULATION LOOP
+    // =========================
+
+    void Update()
     {
-        GameObject floor = Instantiate(floorPrefab);
+        timer += Time.deltaTime;
 
-        floor.transform.position = new Vector3(rows / 2f, 0, cols / 2f);
-
-        floor.transform.localScale = new Vector3(rows, 1, cols);
-    }
-
-    void GenerateVisualGrid()
-    {
-        for (int r = 0; r <= rows; r++)
+        if (timer >= stepInterval)
         {
-            CreateLine(
-                new Vector3(0, 0.01f, r),
-                new Vector3(cols, 0.01f, r)
-            );
-        }
+            timer = 0f;
 
-        for (int c = 0; c <= cols; c++)
-        {
-            CreateLine(
-                new Vector3(c, 0.01f, 0),
-                new Vector3(c, 0.01f, rows)
-            );
+            warehouse.StepSimulation();
+
+            SyncRobotVisuals();
+            SyncCrateVisuals();
+            SyncStacks();
         }
     }
 
-    void CreateLine(Vector3 start, Vector3 end)
-    {
-        GameObject line = new GameObject("GridLine");
-        LineRenderer lr = line.AddComponent<LineRenderer>();
+    // =========================
+    // ROBOT VISUAL SYNC
+    // =========================
 
-        lr.positionCount = 2;
-        lr.SetPosition(0, start);
-        lr.SetPosition(1, end);
-        lr.widthMultiplier = 0.05f;
+    void SyncRobotVisuals()
+    {
+        foreach (var pair in robotViews)
+        {
+            var robot = pair.Key;
+            var go = pair.Value;
+
+            go.transform.position = CellToWorld(robot.CurrentCell);
+        }
     }
+
+    // =========================
+    // CRATE PICKUP / REMOVAL
+    // =========================
+
+    void SyncCrateVisuals()
+    {
+        var toRemove = new List<Crate>();
+
+        foreach (var pair in crateViews)
+        {
+            var crate = pair.Key;
+
+            // crate picked by robot → remove visual
+            if (crate.CurrentCell == null)
+            {
+                Destroy(pair.Value);
+                toRemove.Add(crate);
+            }
+        }
+
+        foreach (var c in toRemove)
+            crateViews.Remove(c);
+    }
+
+    // =========================
+    // STACK VISUALS AT DROP ZONES
+    // =========================
+
+    void SyncStacks()
+    {
+        foreach (var cell in warehouse.Grid)
+        {
+            if (!cell.IsDropZone || cell.StackHeight <= 0)
+                continue;
+
+            if (!stackViews.ContainsKey(cell))
+                stackViews[cell] = new List<GameObject>();
+
+            var stack = stackViews[cell];
+
+            // spawn missing visual crates
+            while (stack.Count < cell.StackHeight)
+            {
+                float height = 0.5f + stack.Count * 1.0f;
+
+                Vector3 pos = CellToWorld(cell) + Vector3.up * height;
+
+                var go = Instantiate(cratePrefab, pos, Quaternion.identity);
+                stack.Add(go);
+            }
+        }
+    }
+
+    // =========================
+    // SPAWN INITIAL VISUALS
+    // =========================
 
     void SpawnVisuals()
     {
@@ -80,6 +149,13 @@ public class GameController : MonoBehaviour
             Vector3 pos = CellToWorld(robot.CurrentCell);
             robotViews[robot] = Instantiate(robotPrefab, pos, Quaternion.identity);
         }
+    }
+
+    void SpawnFloor(int size)
+    {
+        var floor = Instantiate(floorPrefab);
+        floor.transform.position = new Vector3(size / 2f, 0, size / 2f);
+        floor.transform.localScale = new Vector3(size, 1, size);
     }
 
     Vector3 CellToWorld(Cell cell)
