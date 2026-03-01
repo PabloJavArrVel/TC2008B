@@ -71,7 +71,10 @@ public class WarehouseManager
             );
 
             foreach (var z in zones)
-                dropZones.Enqueue(z);
+            {
+                z.IsDropZone = true;
+                 dropZones.Enqueue(z);
+            }
         }
     }
 
@@ -170,7 +173,7 @@ public class WarehouseManager
 
         var path = ComputePath(robot.CurrentCell, crate.CurrentCell);
 
-        robot.AssignPath(path, carrying: false);
+        robot.AssignPath(path);
         robotCarrying[robot] = true;
     }
 
@@ -179,12 +182,22 @@ public class WarehouseManager
         if (dropZones.Count == 0)
             return;
 
-        var zone = dropZones.Peek(); // reuse zones (stacking happens here)
+        int attempts = dropZones.Count;
 
-        var path = ComputePath(robot.CurrentCell, zone);
+        while (attempts-- > 0)
+        {
+            var zone = dropZones.Dequeue();
+            dropZones.Enqueue(zone); // rotate
 
-        robot.AssignPath(path, carrying: true);
-        robotCarrying[robot] = false;
+            // skip full stacks
+            if (!zone.CanStack())
+                continue;
+
+            var path = ComputePath(robot.CurrentCell, zone);
+            robot.AssignPath(path);
+            return;
+        }
+
     }
 
     // =========================

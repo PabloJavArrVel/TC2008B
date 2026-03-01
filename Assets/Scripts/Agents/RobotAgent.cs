@@ -25,10 +25,9 @@ public class RobotAgent
     // MANAGER API
     // =====================
 
-    public void AssignPath(Queue<Cell> newPath, bool carrying)
+   public void AssignPath(Queue<Cell> newPath)
     {
         path = newPath ?? new Queue<Cell>();
-        IsCarrying = carrying;
 
         State = path.Count > 0
             ? RobotState.Tasked
@@ -97,5 +96,20 @@ public class RobotAgent
     {
         CurrentCell = newCell;
         path.Dequeue();
+
+        // PICKUP
+        if (!IsCarrying && newCell.OccupyingCrate != null)
+        {
+            var crate = newCell.OccupyingCrate;
+            newCell.OccupyingCrate = null;
+            IsCarrying = true;
+        }
+
+        // DROP
+        if (IsCarrying && newCell.CanStack())
+        {
+            newCell.StackHeight++;
+            IsCarrying = false;
+        }
     }
 }

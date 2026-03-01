@@ -92,7 +92,7 @@ public class GameController : MonoBehaviour
             var crate = pair.Key;
 
             // crate picked by robot → remove visual
-            if (crate.CurrentCell == null)
+            if (crate.CurrentCell.OccupyingCrate == null)
             {
                 Destroy(pair.Value);
                 toRemove.Add(crate);
