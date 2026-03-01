@@ -12,6 +12,7 @@ UserSettings/
 *.user
 *.userprefs
 *.booproj
+.vscode/
 *.svd
 
 .DS_Store
