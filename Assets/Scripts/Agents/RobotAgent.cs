@@ -8,11 +8,19 @@ public class RobotAgent
 
     public RobotState State { get; private set; } = RobotState.Idle;
 
-    public bool IsCarrying { get; private set; }
+    // ======================
+    // REAL CARRY SYSTEM
+    // ======================
+
+    public Crate CarriedCrate { get; private set; }
+    public bool IsCarrying => CarriedCrate != null;
 
     private Queue<Cell> path = new();
 
     public event Action<RobotAgent> OnTaskFinished;
+
+    // deadlock prevention
+    int blockedSteps = 0;
 
     public RobotAgent(int id, Cell startCell)
     {
@@ -25,9 +33,10 @@ public class RobotAgent
     // MANAGER API
     // =====================
 
-   public void AssignPath(Queue<Cell> newPath)
+    public void AssignPath(Queue<Cell> newPath)
     {
         path = newPath ?? new Queue<Cell>();
+        blockedSteps = 0;
 
         State = path.Count > 0
             ? RobotState.Tasked
@@ -75,7 +84,20 @@ public class RobotAgent
         }
 
         if (p.NextIsBlocked)
+        {
+            blockedSteps++;
+
+            // simple deadlock prevention
+            if (blockedSteps > 3)
+            {
+                State = RobotState.Idle;
+                OnTaskFinished?.Invoke(this);
+            }
+
             return Stay();
+        }
+
+        blockedSteps = 0;
 
         return new MoveIntent
         {
@@ -95,21 +117,29 @@ public class RobotAgent
     public void CommitMove(Cell newCell)
     {
         CurrentCell = newCell;
-        path.Dequeue();
 
-        // PICKUP
+        if (path.Count > 0)
+            path.Dequeue();
+
+        // ======================
+        // PICKUP 
+        // ======================
+
         if (!IsCarrying && newCell.OccupyingCrate != null)
         {
-            var crate = newCell.OccupyingCrate;
+            CarriedCrate = newCell.OccupyingCrate;
             newCell.OccupyingCrate = null;
-            IsCarrying = true;
         }
 
+        // ======================
         // DROP
+        // ======================
+
         if (IsCarrying && newCell.CanStack())
         {
             newCell.StackHeight++;
-            IsCarrying = false;
+            CarriedCrate.CurrentCell = newCell;
+            CarriedCrate = null;
         }
     }
 }

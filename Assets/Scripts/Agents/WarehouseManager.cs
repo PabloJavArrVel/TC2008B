@@ -9,8 +9,6 @@ public class WarehouseManager
     private Queue<Crate> unassignedCrates = new();
     private Queue<Cell> dropZones = new();
 
-    private Dictionary<RobotAgent, bool> robotCarrying = new();
-
     // =========================
     // CONSTRUCTOR
     // =========================
@@ -23,18 +21,14 @@ public class WarehouseManager
         InitializeCrateQueue();
 
         foreach (var robot in warehouse.Robots)
-        {
-            robotCarrying[robot] = false;
             robot.OnTaskFinished += HandleRobotFree;
-        }
 
-        // give initial tasks
         foreach (var robot in warehouse.Robots)
             AssignNextTask(robot);
     }
 
     // =========================
-    // INITIALIZE CRATE QUEUE
+    // INITIALIZE CRATES
     // =========================
 
     void InitializeCrateQueue()
@@ -43,25 +37,93 @@ public class WarehouseManager
             unassignedCrates.Enqueue(crate);
     }
 
+    // =========================
+    // ROBOT FINISHED TASK
+    // =========================
+
+    void HandleRobotFree(RobotAgent robot)
+    {
+        AssignNextTask(robot);
+    }
+
+    // =========================
+    // TASK ASSIGNMENT
+    // =========================
+
+    void AssignNextTask(RobotAgent robot)
+    {
+        if (!robot.IsCarrying)
+            AssignPickup(robot);
+        else
+            AssignDrop(robot);
+    }
+
+    // =========================
+    // PICKUP ASSIGNMENT
+    // =========================
+
+    void AssignPickup(RobotAgent robot)
+    {
+        // remove invalid crates (already picked)
+        while (unassignedCrates.Count > 0)
+        {
+            var crate = unassignedCrates.Peek();
+
+            if (crate.CurrentCell.OccupyingCrate == crate)
+                break;
+
+            unassignedCrates.Dequeue();
+        }
+
+        if (unassignedCrates.Count == 0)
+            return;
+
+        var target = unassignedCrates.Dequeue();
+
+        var path = ComputePath(robot.CurrentCell, target.CurrentCell);
+        robot.AssignPath(path);
+    }
+
+    // =========================
+    // DROP ASSIGNMENT
+    // =========================
+
+    void AssignDrop(RobotAgent robot)
+    {
+        if (dropZones.Count == 0)
+            return;
+
+        int attempts = dropZones.Count;
+
+        while (attempts-- > 0)
+        {
+            var zone = dropZones.Dequeue();
+            dropZones.Enqueue(zone);
+
+            if (!zone.CanStack())
+                continue;
+
+            var path = ComputePath(robot.CurrentCell, zone);
+            robot.AssignPath(path);
+            return;
+        }
+    }
+
     // =====================================================
-    // QUADRANT DROP ZONE INITIALIZATION 
+    // DROP ZONE INITIALIZATION
     // =====================================================
 
     void InitializeDropZones(int crateCount)
     {
         dropZones.Clear();
 
-        int stackCount = crateCount / 5; // full stacks only
+        int stackCount = crateCount / 5;
         if (stackCount == 0)
             return;
 
-        // distribute stacks across 4 quadrants
         int[] perQuadrant = DistributeStacks(stackCount);
-
-        // get quadrant centers
         var centers = GetQuadrantCenters();
 
-        // generate zones for each quadrant
         for (int q = 0; q < 4; q++)
         {
             var zones = GenerateZonesAround(
@@ -73,11 +135,10 @@ public class WarehouseManager
             foreach (var z in zones)
             {
                 z.IsDropZone = true;
-                 dropZones.Enqueue(z);
+                dropZones.Enqueue(z);
             }
         }
     }
-
 
     int[] DistributeStacks(int total)
     {
@@ -89,7 +150,6 @@ public class WarehouseManager
         return result;
     }
 
-    // find center of each quadrant
     List<(int row, int col)> GetQuadrantCenters()
     {
         int midR = warehouse.Rows / 2;
@@ -97,15 +157,14 @@ public class WarehouseManager
 
         return new List<(int, int)>
         {
-            (midR / 2, midC / 2),                                  // top-left
-            (midR / 2, midC + (warehouse.Cols - midC) / 2),        // top-right
-            (midR + (warehouse.Rows - midR) / 2, midC / 2),        // bottom-left
+            (midR / 2, midC / 2),
+            (midR / 2, midC + (warehouse.Cols - midC) / 2),
+            (midR + (warehouse.Rows - midR) / 2, midC / 2),
             (midR + (warehouse.Rows - midR) / 2,
-             midC + (warehouse.Cols - midC) / 2)                   // bottom-right
+             midC + (warehouse.Cols - midC) / 2)
         };
     }
 
-    // generate cells around center using expanding radius
     List<Cell> GenerateZonesAround(int centerR, int centerC, int needed)
     {
         var result = new List<Cell>();
@@ -124,7 +183,6 @@ public class WarehouseManager
 
                 var cell = warehouse.Grid[r, c];
 
-                // ignore shelves (future-proof)
                 if (!cell.IsShelf && !result.Contains(cell))
                     result.Add(cell);
             }
@@ -144,64 +202,7 @@ public class WarehouseManager
     }
 
     // =========================
-    // ROBOT FINISHED TASK
-    // =========================
-
-    void HandleRobotFree(RobotAgent robot)
-    {
-        AssignNextTask(robot);
-    }
-
-    // =========================
-    // TASK ASSIGNMENT
-    // =========================
-
-    void AssignNextTask(RobotAgent robot)
-    {
-        if (!robotCarrying[robot])
-            AssignPickup(robot);
-        else
-            AssignDrop(robot);
-    }
-
-    void AssignPickup(RobotAgent robot)
-    {
-        if (unassignedCrates.Count == 0)
-            return;
-
-        var crate = unassignedCrates.Dequeue();
-
-        var path = ComputePath(robot.CurrentCell, crate.CurrentCell);
-
-        robot.AssignPath(path);
-        robotCarrying[robot] = true;
-    }
-
-    void AssignDrop(RobotAgent robot)
-    {
-        if (dropZones.Count == 0)
-            return;
-
-        int attempts = dropZones.Count;
-
-        while (attempts-- > 0)
-        {
-            var zone = dropZones.Dequeue();
-            dropZones.Enqueue(zone); // rotate
-
-            // skip full stacks
-            if (!zone.CanStack())
-                continue;
-
-            var path = ComputePath(robot.CurrentCell, zone);
-            robot.AssignPath(path);
-            return;
-        }
-
-    }
-
-    // =========================
-    // GRID PATHFINDING (BFS)
+    // BFS PATHFINDING
     // =========================
 
     Queue<Cell> ComputePath(Cell start, Cell goal)
