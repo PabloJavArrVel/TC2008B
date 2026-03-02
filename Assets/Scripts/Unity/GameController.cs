@@ -22,6 +22,7 @@ public class GameController : MonoBehaviour
     public GameObject shelfPrefab;
 
     [Header("UI")]
+    public Light directionalLight;
     public Text timeText;
     public Text movesText;
     public Text statusText;
@@ -48,9 +49,24 @@ public class GameController : MonoBehaviour
 
     void Start()
     {
-        rows = 20;
-        cols = 20;
+        // --- Estimate required cells ---
+        int requiredCells = k * 4 + robotCount * 2;
 
+        // --- Compute square grid size ---
+        int size = Mathf.CeilToInt(Mathf.Sqrt(requiredCells));
+
+        // --- Ensure minimum size so robots don't start cramped ---
+        int minSize = 10;
+        size = Mathf.Max(size, minSize);
+
+        // --- Align grid to multiples of 5 (since world spacing = 5f) ---
+        int spacing = 5;
+        size = Mathf.CeilToInt(size / (float)spacing) * spacing;
+
+        rows = size;
+        cols = size;
+
+        // --- Create warehouse ---
         warehouse = new Warehouse(rows, cols);
         warehouse.GenerateWorld(robotCount, k);
 
@@ -64,8 +80,8 @@ public class GameController : MonoBehaviour
         SpawnPerimeterWalls(5f);
         SpawnShelves();
         SpawnVisuals();
+        PositionCameraAndLight();
     }
-
     // =========================
     // SIMULATION LOOP
     // =========================
@@ -301,5 +317,43 @@ public class GameController : MonoBehaviour
     Vector3 CellToWorld(Cell cell)
     {
         return new Vector3(cell.Col + 0.5f, 0.5f, cell.Row + 0.5f);
+    }
+
+    void PositionCameraAndLight()
+    {
+        float gridSize = Mathf.Max(rows, cols);
+
+        float centerX = cols / 2f;
+        float centerZ = rows / 2f;
+
+        Camera cam = Camera.main;
+
+        cam.transform.rotation = Quaternion.Euler(51.88f, 0f, 0f);
+
+        // Scale camera position with grid size
+        float height = gridSize * 0.5f;
+        float zOffset = gridSize * 0.455f;
+
+        cam.transform.position = new Vector3(
+            centerX,
+            height,
+            centerZ - zOffset
+        );
+
+        // =====================
+        // Directional Light
+        // =====================
+        
+
+        if (directionalLight != null)
+        {
+
+
+            // place light above the center of the grid
+            directionalLight.transform.position = new Vector3(centerX, 5f, centerZ);
+
+            // angle similar to natural sun
+            directionalLight.transform.rotation = Quaternion.Euler(50f, 40f, 0f);
+        }
     }
 }
