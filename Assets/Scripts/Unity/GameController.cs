@@ -52,15 +52,6 @@ public class GameController : MonoBehaviour
         // --- Estimate required cells ---
         int requiredCells = k * 4 + robotCount * 2;
 
-        // --- Compute square grid size ---
-        int size = Mathf.CeilToInt(Mathf.Sqrt(requiredCells));
-
-        // --- Ensure minimum size so robots don't start cramped ---
-        int minSize = 10;
-        size = Mathf.Max(size, minSize);
-
-        // --- Align grid to multiples of 5 (since world spacing = 5f) ---
-        int spacing = 5;
         size = Mathf.CeilToInt(size / (float)spacing) * spacing;
 
         rows = Mathf.Max(size, 20);
