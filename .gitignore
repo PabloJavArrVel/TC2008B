@@ -4,6 +4,7 @@
 [Bb]uilds/
 [Ll]ogs/
 UserSettings/
+_recovery/
 
 *.csproj
 *.unitypackage

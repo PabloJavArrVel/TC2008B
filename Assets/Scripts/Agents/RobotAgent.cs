@@ -111,7 +111,7 @@ public class RobotAgent
 
             // Remove crate from world entirely
             deliveredCrate.CurrentCell = null;
-            deliveredCrate.IsDelivered = true; // add this bool to Crate
+            deliveredCrate.IsDelivered = true; 
 
             ClearPath();
         }
