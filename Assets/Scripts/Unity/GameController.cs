@@ -49,13 +49,16 @@ public class GameController : MonoBehaviour
 
     void Start()
     {
-        // --- Estimate required cells ---
+        int minSize = 20;
         int requiredCells = k * 4 + robotCount * 2;
+        int size = Mathf.CeilToInt(Mathf.Sqrt(requiredCells));
+        // round to multiple of 5
+        size = Mathf.CeilToInt(size / 5f) * 5;
+        // enforce minimum grid
+        size = Mathf.Max(size, minSize);
 
-        size = Mathf.CeilToInt(size / (float)spacing) * spacing;
-
-        rows = Mathf.Max(size, 20);
-        cols = Mathf.Max(size, 20);
+        rows = size;
+        cols = size;
 
         // --- Create warehouse ---
         warehouse = new Warehouse(rows, cols);
