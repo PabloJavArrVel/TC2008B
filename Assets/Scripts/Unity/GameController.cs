@@ -18,7 +18,6 @@ public class GameController : MonoBehaviour
     public GameObject cratePrefab;
     public GameObject floorPrefab;
     public GameObject wallStraightPrefab;
-    public GameObject wallCornerPrefab;
     public GameObject shelfPrefab;
 
     [Header("UI")]
@@ -63,8 +62,8 @@ public class GameController : MonoBehaviour
         int spacing = 5;
         size = Mathf.CeilToInt(size / (float)spacing) * spacing;
 
-        rows = size;
-        cols = size;
+        rows = Mathf.Max(size, 20);
+        cols = Mathf.Max(size, 20);
 
         // --- Create warehouse ---
         warehouse = new Warehouse(rows, cols);
@@ -80,7 +79,8 @@ public class GameController : MonoBehaviour
         SpawnPerimeterWalls(5f);
         SpawnShelves();
         SpawnVisuals();
-        PositionCameraAndLight();
+        PositionLights();
+        PositionCamera();
     }
     // =========================
     // SIMULATION LOOP
@@ -319,7 +319,7 @@ public class GameController : MonoBehaviour
         return new Vector3(cell.Col + 0.5f, 0.5f, cell.Row + 0.5f);
     }
 
-    void PositionCameraAndLight()
+    void PositionCamera()
     {
         float gridSize = Mathf.Max(rows, cols);
 
@@ -340,20 +340,42 @@ public class GameController : MonoBehaviour
             centerZ - zOffset
         );
 
+    }
+
         // =====================
         // Directional Light
         // =====================
         
+    void PositionLights()
+    {
+        float centerX = rows / 2f;
+        float centerZ = cols / 2f;
 
-        if (directionalLight != null)
+        float margin = 1.5f;   // distance from edges
+        float height = 5f;
+
+        Vector3[] positions =
         {
+            // corners (inside grid)
+            new Vector3(margin, height, margin),
+            new Vector3(rows - margin, height, margin),
+            new Vector3(margin, height, cols - margin),
+            new Vector3(rows - margin, height, cols - margin),
 
+            // cross pattern
+            new Vector3(centerX, height, margin),
+            new Vector3(centerX, height, cols - margin),
+            new Vector3(margin, height, centerZ),
+            new Vector3(rows - margin, height, centerZ)
+        };
 
-            // place light above the center of the grid
-            directionalLight.transform.position = new Vector3(centerX, 5f, centerZ);
+        Vector3 center = new Vector3(centerX, 0, centerZ);
 
-            // angle similar to natural sun
-            directionalLight.transform.rotation = Quaternion.Euler(50f, 40f, 0f);
+        foreach (var pos in positions)
+        {
+            var light = Instantiate(directionalLight);
+            light.transform.position = pos;
+            light.transform.rotation = Quaternion.LookRotation(center - pos);
         }
     }
 }
