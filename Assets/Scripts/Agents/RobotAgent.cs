@@ -18,8 +18,12 @@ public class RobotAgent
     private Queue<Cell> path = new();
 
     public event Action<RobotAgent> OnTaskFinished;
+    public event Action OnMoved;
+    public bool IsBlocked { get; private set; }
+    public Cell NextIntendedCell => (State == RobotState.Tasked && path.Count > 0) ? path.Peek() : null;
+    private Cell goalCell;
 
-    // deadlock prevention
+    // deadlock prevention (only for Tasked+Blocked state, not Idle)
     int blockedSteps = 0;
 
     public RobotAgent(int id, Cell startCell)
@@ -50,9 +54,35 @@ public class RobotAgent
     public MoveIntent Step()
     {
         var p = Perceive();
-        return Decide(p);
-    }
 
+        if (p.PathFinished)
+        {
+            if (State == RobotState.Tasked)
+            {
+                State = RobotState.Idle;
+                OnTaskFinished?.Invoke(this);
+            }
+            return Stay();
+        }
+
+        if (State == RobotState.Idle || path.Count == 0)
+            return Stay();
+
+        if (p.NextIsBlocked)
+        {
+            IsBlocked = true; 
+            return Stay();
+        }
+
+        IsBlocked = false;
+
+        return new MoveIntent
+        {
+            Robot = this,
+            From = CurrentCell,
+            To = p.NextCell
+        };
+    }
     private Perception Perceive()
     {
         if (State != RobotState.Tasked || path.Count == 0)
@@ -70,43 +100,6 @@ public class RobotAgent
         };
     }
 
-    private MoveIntent Decide(Perception p)
-    {
-        if (p.PathFinished)
-        {
-            if (State == RobotState.Tasked)
-            {
-                State = RobotState.Idle;
-                OnTaskFinished?.Invoke(this);
-            }
-
-            return Stay();
-        }
-
-        if (p.NextIsBlocked)
-        {
-            blockedSteps++;
-
-            // simple deadlock prevention
-            if (blockedSteps > 3)
-            {
-                State = RobotState.Idle;
-                OnTaskFinished?.Invoke(this);
-            }
-
-            return Stay();
-        }
-
-        blockedSteps = 0;
-
-        return new MoveIntent
-        {
-            Robot = this,
-            From = CurrentCell,
-            To = p.NextCell
-        };
-    }
-
     MoveIntent Stay() =>
         new MoveIntent { Robot = this, From = CurrentCell, To = null };
 
@@ -116,6 +109,7 @@ public class RobotAgent
 
     public void CommitMove(Cell newCell)
     {
+        OnMoved?.Invoke();
         CurrentCell = newCell;
 
         if (path.Count > 0)
@@ -129,6 +123,7 @@ public class RobotAgent
         {
             CarriedCrate = newCell.OccupyingCrate;
             newCell.OccupyingCrate = null;
+            CarriedCrate.CurrentCell = null;
         }
 
         // ======================
@@ -138,8 +133,15 @@ public class RobotAgent
         if (IsCarrying && newCell.CanStack())
         {
             newCell.StackHeight++;
-            CarriedCrate.CurrentCell = newCell;
+            CarriedCrate.CurrentCell = null;
             CarriedCrate = null;
         }
+    }
+
+    public void ClearPath()
+    {
+        path.Clear();
+        goalCell = null;
+        State = RobotState.Idle;
     }
 }

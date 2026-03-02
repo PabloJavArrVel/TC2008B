@@ -11,8 +11,9 @@ public class Warehouse
 
     public List<RobotAgent> Robots { get; } = new();
     public List<Crate> Crates { get; } = new();
-
     Random random = new();
+
+    public WarehouseManager Manager { get; set; }
 
     // =========================
     // CONSTRUCTOR
@@ -76,6 +77,7 @@ public class Warehouse
 
     public void StepSimulation()
     {
+        Manager?.Tick();
         // 1 — collect intents from robots
         var intents = new List<MoveIntent>();
 
@@ -125,10 +127,12 @@ public class Warehouse
             if (a.To == null || b.To == null)
                 continue;
 
-            if (a.To == b.From && b.To == a.From)
+           if (a.To == b.From && b.To == a.From)
             {
-                a.To = null;
-                b.To = null;
+                if (a.Robot.Id < b.Robot.Id)
+                    b.To = null;
+                else
+                    a.To = null;
             }
         }
     }
