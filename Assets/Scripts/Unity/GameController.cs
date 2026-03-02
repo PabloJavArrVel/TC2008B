@@ -40,6 +40,8 @@ public class GameController : MonoBehaviour
 
     int rows, cols;
 
+    Dictionary<RobotAgent, Vector3> robotTargetPositions = new();
+
     // =========================
     // START
     // =========================
@@ -133,7 +135,23 @@ public class GameController : MonoBehaviour
         }
 
         UpdateUI();
+        SmoothMoveRobots();
     }
+
+    void SmoothMoveRobots()
+{
+    float speed = 1f / stepInterval;
+
+    foreach (var pair in robotViews)
+    {
+        var target = robotTargetPositions[pair.Key];
+        pair.Value.transform.position = Vector3.MoveTowards(
+            pair.Value.transform.position,
+            target,
+            speed * Time.deltaTime
+        );
+    }
+}
 
     // =========================
     // CHECK DONE
@@ -174,7 +192,7 @@ public class GameController : MonoBehaviour
     void SyncRobotVisuals()
     {
         foreach (var pair in robotViews)
-            pair.Value.transform.position = CellToWorld(pair.Key.CurrentCell);
+            robotTargetPositions[pair.Key] = CellToWorld(pair.Key.CurrentCell); 
     }
 
     // =========================
@@ -234,8 +252,11 @@ public class GameController : MonoBehaviour
         foreach (var crate in warehouse.Crates)
             crateViews[crate] = Instantiate(cratePrefab, CellToWorld(crate.CurrentCell), Quaternion.identity);
 
-        foreach (var robot in warehouse.Robots)
-            robotViews[robot] = Instantiate(robotPrefab, CellToWorld(robot.CurrentCell), Quaternion.identity);
+        foreach (var robot in warehouse.Robots){
+            var pos = CellToWorld(robot.CurrentCell);
+            robotViews[robot] = Instantiate(robotPrefab, pos, Quaternion.identity);
+            robotTargetPositions[robot] = pos;
+        }
     }
 
     // =========================
