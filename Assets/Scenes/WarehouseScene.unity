@@ -285,7 +285,7 @@ Light:
   serializedVersion: 12
   m_Type: 0
   m_Color: {r: 1, g: 1, b: 1, a: 1}
-  m_Intensity: 550
+  m_Intensity: 50
   m_Range: 14
   m_SpotAngle: 89.8
   m_InnerSpotAngle: 30
@@ -1004,7 +1004,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 032c20d08d4224c2f9d60d72bee8c2f6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GameController
-  k: 20
+  k: 30
   robotCount: 5
   stepInterval: 0.3
   maxTime: 300
@@ -1012,8 +1012,9 @@ MonoBehaviour:
   cratePrefab: {fileID: 3525223303547264507, guid: 37a5ab49a620f4d408465089c14e6223, type: 3}
   floorPrefab: {fileID: 7995760971215978489, guid: 339fd8a0b29c648a5aa071705ff2d62d, type: 3}
   wallStraightPrefab: {fileID: 3376179557836554564, guid: de793e47344150849b55167073a085a8, type: 3}
-  wallCornerPrefab: {fileID: 0}
-  shelfPrefab: {fileID: 4934971901129387132, guid: 215fceb8eccbc54409e145f16c2b0f8c, type: 3}
+  doorPrefab: {fileID: 5146836815898433518, guid: f248157ebb1ac4cdf9d41e2682c883ad, type: 3}
+  shelfPrefab: {fileID: 1735011503933505690, guid: 485d9361c7b6e48438236f67c2248fb9, type: 3}
+  directionalLight: {fileID: 410087040}
   timeText: {fileID: 2120375092}
   movesText: {fileID: 1392159465}
   statusText: {fileID: 1493034068}
