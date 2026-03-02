@@ -18,6 +18,7 @@ public class GameController : MonoBehaviour
     public GameObject cratePrefab;
     public GameObject floorPrefab;
     public GameObject wallStraightPrefab;
+    public GameObject doorPrefab;
     public GameObject shelfPrefab;
 
     [Header("UI")]
@@ -77,6 +78,7 @@ public class GameController : MonoBehaviour
 
         SpawnFloor();
         SpawnPerimeterWalls(5f);
+        SpawnDoor(cols / 2f, rows - 1, 0f, 180f); // north wall door
         SpawnShelves();
         SpawnVisuals();
         PositionLights();
@@ -278,6 +280,19 @@ public class GameController : MonoBehaviour
         go.transform.rotation = Quaternion.Euler(0, rotY, 0);
 
         go.transform.localScale = new Vector3(1f, 10f, 1f);
+    }
+
+    // =========================
+    // SPAWN DOOR
+    // =========================
+    void SpawnDoor(float col, float row, float y, float rotY)
+    {
+        if (doorPrefab == null) return;
+
+        var door = Instantiate(doorPrefab);
+
+        door.transform.position = new Vector3(col + 0.5f, y + 0.1f, row + 0.5f);
+        door.transform.rotation = Quaternion.Euler(0, rotY, 0);
     }
 
     // =========================
