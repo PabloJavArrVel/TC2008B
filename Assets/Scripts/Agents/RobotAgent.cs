@@ -1,30 +1,40 @@
+/*
+========================================================
+ROBOT AGENT — EXECUTOR ONLY (NO INTELLIGENCE)
+
+RESPONSIBILITY:
+- Store current position
+- Store path assigned by manager
+- Request next move
+- Execute movement
+- Pickup / drop when entering cell
+
+FLOW:
+WarehouseManager → SetPath()
+Warehouse → RequestMove()
+Warehouse → CommitMove()
+========================================================
+*/
+
 using System;
 using System.Collections.Generic;
 
 public class RobotAgent
 {
     public int Id { get; }
+
     public Cell CurrentCell { get; private set; }
-
-    public RobotState State { get; private set; } = RobotState.Idle;
-
-    // ======================
-    // REAL CARRY SYSTEM
-    // ======================
 
     public Crate CarriedCrate { get; private set; }
     public bool IsCarrying => CarriedCrate != null;
-
-    private Queue<Cell> path = new();
-
-    public event Action<RobotAgent> OnTaskFinished;
     public event Action OnMoved;
-    public bool IsBlocked { get; private set; }
-    public Cell NextIntendedCell => (State == RobotState.Tasked && path.Count > 0) ? path.Peek() : null;
-    private Cell goalCell;
 
-    // deadlock prevention (only for Tasked+Blocked state, not Idle)
-    int blockedSteps = 0;
+    Queue<Cell> path = new();
+
+    public bool HasPath => path.Count > 0;
+    public Cell NextCell => path.Count > 0 ? path.Peek() : null;
+
+    public Cell Goal { get; private set; }
 
     public RobotAgent(int id, Cell startCell)
     {
@@ -33,115 +43,77 @@ public class RobotAgent
         startCell.OccupyingRobot = this;
     }
 
-    // =====================
-    // MANAGER API
-    // =====================
+    // ================================
+    // CALLED BY WAREHOUSE MANAGER
+    // ================================
 
-    public void AssignPath(Queue<Cell> newPath)
+    public void SetPath(Queue<Cell> newPath, Cell goal)
     {
         path = newPath ?? new Queue<Cell>();
-        blockedSteps = 0;
-
-        State = path.Count > 0
-            ? RobotState.Tasked
-            : RobotState.Idle;
+        Goal = goal;
     }
-
-    // =====================
-    // PERCEIVE → DECIDE
-    // =====================
-
-    public MoveIntent Step()
+    public void ClearPath()
     {
-        var p = Perceive();
+        path.Clear();
+        Goal = null;
+    }
+    // ================================
+    // CALLED BY WAREHOUSE (EXECUTION)
+    // ================================
 
-        if (p.PathFinished)
-        {
-            if (State == RobotState.Tasked)
-            {
-                State = RobotState.Idle;
-                OnTaskFinished?.Invoke(this);
-            }
+    public MoveIntent RequestMove()
+    {
+        if (!HasPath)
             return Stay();
-        }
-
-        if (State == RobotState.Idle || path.Count == 0)
-            return Stay();
-
-        if (p.NextIsBlocked)
-        {
-            IsBlocked = true; 
-            return Stay();
-        }
-
-        IsBlocked = false;
 
         return new MoveIntent
         {
             Robot = this,
             From = CurrentCell,
-            To = p.NextCell
+            To = NextCell
         };
     }
-    private Perception Perceive()
+
+    MoveIntent Stay()
     {
-        if (State != RobotState.Tasked || path.Count == 0)
-            return new Perception { PathFinished = true };
-
-        var next = path.Peek();
-
-        return new Perception
+        return new MoveIntent
         {
-            PathFinished = false,
-            NextCell = next,
-            NextIsBlocked =
-                next.IsShelf ||
-                next.OccupyingRobot != null
+            Robot = this,
+            From = CurrentCell,
+            To = null
         };
     }
-
-    MoveIntent Stay() =>
-        new MoveIntent { Robot = this, From = CurrentCell, To = null };
-
-    // =====================
-    // CALLED BY WAREHOUSE
-    // =====================
 
     public void CommitMove(Cell newCell)
     {
-        OnMoved?.Invoke();
         CurrentCell = newCell;
+        OnMoved?.Invoke();
 
         if (path.Count > 0)
             path.Dequeue();
 
-        // ======================
-        // PICKUP 
-        // ======================
-
+        // PICKUP
         if (!IsCarrying && newCell.OccupyingCrate != null)
         {
             CarriedCrate = newCell.OccupyingCrate;
             newCell.OccupyingCrate = null;
             CarriedCrate.CurrentCell = null;
+            ClearPath();
         }
 
-        // ======================
         // DROP
-        // ======================
-
         if (IsCarrying && newCell.CanStack())
         {
             newCell.StackHeight++;
-            CarriedCrate.CurrentCell = null;
-            CarriedCrate = null;
-        }
-    }
 
-    public void ClearPath()
-    {
-        path.Clear();
-        goalCell = null;
-        State = RobotState.Idle;
+            var deliveredCrate = CarriedCrate;
+            CarriedCrate = null;
+
+            // Remove crate from world entirely
+            deliveredCrate.CurrentCell = null;
+            deliveredCrate.IsDelivered = true; // add this bool to Crate
+
+            ClearPath();
+        }
     }
 }

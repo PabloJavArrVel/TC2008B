@@ -1,275 +1,284 @@
-using System;
+/*
+========================================================
+WAREHOUSE MANAGER — CENTRALIZED
+
+RESPONSIBILITY:
+- Perceive world state
+- Assign robot tasks
+- Compute paths
+- Detect blocking
+- Prevent deadlocks
+- Replan stuck robots
+- Move idle robots away from critical cells
+
+PERCEIVE → DELIBERATE → ACT LOOP:
+Tick()
+  1. Perceive world
+  2. Assign tasks if needed
+  3. Detect blocking
+  4. Replan if stuck
+========================================================
+*/
+
 using System.Collections.Generic;
 using System.Linq;
 
 public class WarehouseManager
 {
-    private Warehouse warehouse;
+    Warehouse warehouse;
 
-    private List<Crate> unassignedCrates = new();
-    private Queue<Cell> dropZones = new();
-    private Dictionary<RobotAgent, int> stuckCounter = new();
+    Dictionary<RobotAgent, int> blockedTicks = new();
 
-    // Rastrea qué caja fue asignada a cada robot (antes de recogerla)
-    // Para devolver cajas huérfanas si el robot replannea
-    private Dictionary<RobotAgent, Crate> assignedCrates = new();
+    List<Crate> unassignedCrates = new();
+    Dictionary<Crate, RobotAgent> crateAssignments = new();
 
+    HashSet<RobotAgent> parkedRobots = new();
 
-    // =========================
-    // CONSTRUCTOR
-    // =========================
+    Dictionary<RobotAgent, Cell> parkingAssignments = new();
+
+    const int REPLAN_THRESHOLD = 10;
 
     public WarehouseManager(Warehouse warehouse)
     {
         this.warehouse = warehouse;
 
-        InitializeDropZones(warehouse.Crates.Count);
-        InitializeCrateQueue();
-
         foreach (var robot in warehouse.Robots)
-            robot.OnTaskFinished += HandleRobotFree;
-
-        foreach (var robot in warehouse.Robots)
-            stuckCounter[robot] = 0;
-
-        foreach (var robot in warehouse.Robots)
-            AssignNextTask(robot);
+            blockedTicks[robot] = 0;
     }
 
-    // =========================
-    // INITIALIZE CRATES
-    // =========================
+    // =====================================================
+    // MAIN LOOP
+    // =====================================================
 
-    void InitializeCrateQueue()
+    public void Tick()
     {
-        foreach (var crate in warehouse.Crates)
-            unassignedCrates.Add(crate);
+        Perceive();
+        Deliberate();
+        Act();
     }
 
-    // =========================
-    // ROBOT FINISHED TASK
-    // =========================
+    // =====================================================
+    // PERCEIVE
+    // =====================================================
 
-    void HandleRobotFree(RobotAgent robot)
+    void Perceive()
     {
-        AssignNextTask(robot);
+        // Remove assignments for crates no longer in world
+        crateAssignments = crateAssignments
+            .Where(kv =>
+                kv.Key.CurrentCell != null &&
+                !kv.Key.IsDelivered)
+            .ToDictionary(kv => kv.Key, kv => kv.Value);
+
+        // Release crates whose robot stopped pursuing them
+        var abandoned = crateAssignments
+            .Where(kv =>
+                !kv.Value.IsCarrying &&
+                !kv.Value.HasPath)
+            .Select(kv => kv.Key)
+            .ToList();
+
+        foreach (var crate in abandoned)
+            crateAssignments.Remove(crate);
+
+        // Rebuild unassigned crates directly from world state
+        unassignedCrates = warehouse.Crates
+            .Where(c =>
+                c.CurrentCell != null &&
+                !c.IsDelivered &&
+                !crateAssignments.ContainsKey(c))
+            .ToList();
     }
 
-    // =========================
-    // TASK ASSIGNMENT
-    // =========================
+    // =====================================================
+    // DELIBERATE
+    // =====================================================
 
-    void AssignNextTask(RobotAgent robot)
+    void Deliberate()
     {
+        foreach (var robot in warehouse.Robots)
+        {
+            EnsureRobotHasTask(robot);
+        }
+    }
+
+    // =====================================================
+    // ACT
+    // =====================================================
+
+    void Act()
+    {
+        foreach (var robot in warehouse.Robots)
+        {
+            MonitorBlocking(robot);
+        }
+    }
+
+    // =====================================================
+    // TASK MANAGEMENT
+    // =====================================================
+
+    void EnsureRobotHasTask(RobotAgent robot)
+    {
+        if (robot.HasPath)
+            return;
+
+        if (!robot.IsCarrying && unassignedCrates.Count == 0)
+        {
+            SendToParking(robot);
+            return;
+        }
+
         if (!robot.IsCarrying)
+        {
             AssignPickup(robot);
-        else
-            AssignDrop(robot);
-    }
 
-    // =========================
-    // PICKUP ASSIGNMENT
-    // =========================
+            if (!robot.HasPath)
+                SendToParking(robot);
+        }
+        else
+        {
+            AssignDrop(robot);
+        }
+    }
 
     void AssignPickup(RobotAgent robot)
     {
-        // limpiar crates ya recogidas
-        unassignedCrates.RemoveAll(c => c.CurrentCell == null);
-
         if (unassignedCrates.Count == 0)
-        {
-            // Si está parado sobre una drop zone, moverse YA para no bloquearla
-            if (robot.CurrentCell.IsDropZone)
-                MoveToParking(robot);
             return;
-        }
 
-        // asignar la más cercana que tenga path válido
-        var sorted = unassignedCrates
-            .OrderBy(c => Math.Abs(robot.CurrentCell.Row - c.CurrentCell.Row)
-                        + Math.Abs(robot.CurrentCell.Col - c.CurrentCell.Col));
+        var crate = unassignedCrates
+            .OrderBy(c => Manhattan(robot.CurrentCell, c.CurrentCell))
+            .FirstOrDefault();
 
-        foreach (var crate in sorted)
-        {
-            var path = ComputePath(robot.CurrentCell, crate.CurrentCell);
-            if (path.Count > 0)
-            {
-                unassignedCrates.Remove(crate);
-                assignedCrates[robot] = crate; // rastrear asignación
-                robot.AssignPath(path);
-                return;
-            }
-        }
+        if (crate == null)
+            return;
 
-        // Ninguna caja alcanzable ahora: esperar idle, Tick() reintentará
+        var path = ComputePath(robot.CurrentCell, crate.CurrentCell);
+        if (path.Count == 0)
+            return;
+
+        crateAssignments[crate] = robot;
+        unassignedCrates.Remove(crate);
+
+        parkedRobots.Remove(robot);
+        robot.SetPath(path, crate.CurrentCell);
     }
-
-    void MoveToParking(RobotAgent robot)
-    {
-        var frontier = new Queue<Cell>();
-        var visited = new HashSet<Cell>();
-
-        frontier.Enqueue(robot.CurrentCell);
-        visited.Add(robot.CurrentCell);
-
-        Cell parkingSpot = null;
-
-        while (frontier.Count > 0)
-        {
-            var curr = frontier.Dequeue();
-
-            if (curr.IsFree() && curr != robot.CurrentCell)
-            {
-                parkingSpot = curr;
-                break;
-            }
-
-            foreach (var next in warehouse.GetNeighbors(curr))
-            {
-                if (!visited.Contains(next) && !next.IsShelf)
-                {
-                    visited.Add(next);
-                    frontier.Enqueue(next);
-                }
-            }
-        }
-
-        if (parkingSpot != null)
-        {
-            var path = ComputePath(robot.CurrentCell, parkingSpot);
-            robot.AssignPath(path);
-        }
-    }
-
-    // =========================
-    // DROP ASSIGNMENT
-    // =========================
 
     void AssignDrop(RobotAgent robot)
     {
-        if (dropZones.Count == 0)
+        var target = warehouse.Grid
+            .Cast<Cell>()
+            .Where(c => c.IsDropZone && c.CanStack())
+            .OrderBy(c => Manhattan(robot.CurrentCell, c))
+            .FirstOrDefault();
+
+        if (target == null)
             return;
 
-        int attempts = dropZones.Count;
+        var path = ComputePath(robot.CurrentCell, target);
+        if (path.Count == 0)
+            return;
 
-        while (attempts-- > 0)
+        robot.SetPath(path, target);
+    }
+
+    // =====================================================
+    // PARKING SYSTEM (OWNERSHIP)
+    // =====================================================
+
+    void SendToParking(RobotAgent robot)
+    {
+        if (!parkingAssignments.TryGetValue(robot, out var parkingCell))
         {
-            var zone = dropZones.Dequeue();
-            dropZones.Enqueue(zone);
-
-            if (!zone.CanStack())
-                continue;
-
-            var path = ComputePath(robot.CurrentCell, zone);
-            if (path.Count > 0)
-            {
-                robot.AssignPath(path);
+            parkingCell = FindParkingCell();
+            if (parkingCell == null)
                 return;
-            }
 
+            parkingAssignments[robot] = parkingCell;
         }
 
-        // Sin drop zone disponible: el robot espera idle.
-        // Tick() reintentará sin causar oscilación.
-    }
+        if (robot.CurrentCell == parkingCell)
+        {
+            parkedRobots.Add(robot);
+            return;
+        }
 
-    // =====================================================
-    // DROP ZONE INITIALIZATION
-    // =====================================================
-
-    void InitializeDropZones(int crateCount)
-    {
-        dropZones.Clear();
-
-        // Ceiling division: siempre hay suficiente capacidad para todas las cajas
-        int stackCount = (crateCount + 4) / 5;
-        if (stackCount == 0)
+        var path = ComputePath(robot.CurrentCell, parkingCell);
+        if (path.Count == 0)
             return;
 
-        int[] perQuadrant = DistributeStacks(stackCount);
-        var centers = GetQuadrantCenters();
+        parkedRobots.Add(robot);
+        robot.SetPath(path, parkingCell);
+    }
 
-        for (int q = 0; q < 4; q++)
+    Cell FindParkingCell()
+    {
+        for (int r = 1; r < warehouse.Rows / 4; r++)
+        for (int c = 1; c < warehouse.Cols / 4; c++)
         {
-            var zones = GenerateZonesAround(
-                centers[q].row,
-                centers[q].col,
-                perQuadrant[q]
-            );
+            var cell = warehouse.Grid[r, c];
 
-            foreach (var z in zones)
-            {
-                z.IsDropZone = true;
-                dropZones.Enqueue(z);
-            }
+            if (!cell.IsShelf &&
+                !cell.IsDropZone &&
+                cell.OccupyingRobot == null &&
+                !parkingAssignments.Values.Contains(cell))
+                return cell;
+        }
+
+        return null;
+    }
+
+    // =====================================================
+    // BLOCKING & REPLAN
+    // =====================================================
+
+    void MonitorBlocking(RobotAgent robot)
+    {
+        if (!robot.HasPath)
+            return;
+
+        var next = robot.NextCell;
+
+        bool blocked =
+            next.IsShelf ||
+            (next.OccupyingRobot != null &&
+             !parkedRobots.Contains(next.OccupyingRobot));
+
+        if (!blocked)
+        {
+            blockedTicks[robot] = 0;
+            return;
+        }
+
+        blockedTicks[robot]++;
+
+        if (blockedTicks[robot] >= REPLAN_THRESHOLD)
+        {
+            blockedTicks[robot] = 0;
+            Replan(robot);
         }
     }
 
-    int[] DistributeStacks(int total)
+    void Replan(RobotAgent robot)
     {
-        int[] result = new int[4];
-
-        for (int i = 0; i < total; i++)
-            result[i % 4]++;
-
-        return result;
-    }
-
-    List<(int row, int col)> GetQuadrantCenters()
-    {
-        int midR = warehouse.Rows / 2;
-        int midC = warehouse.Cols / 2;
-
-        return new List<(int, int)>
+        if (robot.Goal == null)
         {
-            (midR / 2, midC / 2),
-            (midR / 2, midC + (warehouse.Cols - midC) / 2),
-            (midR + (warehouse.Rows - midR) / 2, midC / 2),
-            (midR + (warehouse.Rows - midR) / 2,
-             midC + (warehouse.Cols - midC) / 2)
-        };
-    }
-
-    List<Cell> GenerateZonesAround(int centerR, int centerC, int needed)
-    {
-        var result = new List<Cell>();
-        int radius = 0;
-
-        while (result.Count < needed)
-        {
-            for (int r = centerR - radius; r <= centerR + radius; r++)
-            for (int c = centerC - radius; c <= centerC + radius; c++)
-            {
-                if (result.Count >= needed)
-                    break;
-
-                if (!InBounds(r, c))
-                    continue;
-
-                var cell = warehouse.Grid[r, c];
-
-                // No poner drop zone sobre estante ni sobre una caja suelta
-                if (!cell.IsShelf && cell.OccupyingCrate == null && !result.Contains(cell))
-                    result.Add(cell);
-            }
-
-            radius++;
+            robot.ClearPath();
+            return;
         }
 
-        return result;
+        var newPath = ComputePath(robot.CurrentCell, robot.Goal);
+
+        if (newPath.Count > 0)
+            robot.SetPath(newPath, robot.Goal);
+        else
+            robot.ClearPath();
     }
 
-    bool InBounds(int r, int c)
-    {
-        return r >= 0 &&
-               c >= 0 &&
-               r < warehouse.Rows &&
-               c < warehouse.Cols;
-    }
-
-    // =========================
-    // BFS PATHFINDING
-    // =========================
+    // =====================================================
+    // PATHFINDING
+    // =====================================================
 
     Queue<Cell> ComputePath(Cell start, Cell goal)
     {
@@ -288,7 +297,10 @@ public class WarehouseManager
 
             foreach (var next in warehouse.GetNeighbors(current))
             {
-                if ((next.IsShelf || next.HasLooseCrate()) && next != goal)
+                if (next.IsShelf)
+                    continue;
+
+                if (next.OccupyingRobot != null && next != goal)
                     continue;
 
                 if (cameFrom.ContainsKey(next))
@@ -302,85 +314,21 @@ public class WarehouseManager
         if (!cameFrom.ContainsKey(goal))
             return new Queue<Cell>();
 
-        var path = new Stack<Cell>();
+        var stack = new Stack<Cell>();
         var step = goal;
 
         while (step != start)
         {
-            path.Push(step);
+            stack.Push(step);
             step = cameFrom[step];
         }
 
-        return new Queue<Cell>(path);
+        return new Queue<Cell>(stack);
     }
 
-    public void Tick()
+    int Manhattan(Cell a, Cell b)
     {
-        // Limpiar asignaciones de robots que ya recogieron su caja
-        foreach (var robot in warehouse.Robots)
-            if (robot.IsCarrying && assignedCrates.ContainsKey(robot))
-                assignedCrates.Remove(robot);
-
-        foreach (var robot in warehouse.Robots)
-        {
-            if (robot.State == RobotState.Idle)
-            {
-                // Robot idle parado sobre drop zone: moverse para no bloquearla
-                if (robot.CurrentCell.IsDropZone)
-                {
-                    MoveToParking(robot);
-                    stuckCounter[robot] = 0;
-                    continue;
-                }
-
-                stuckCounter[robot]++;
-
-                // Reintentar asignación cada 8 ticks para no oscilar
-                if (stuckCounter[robot] >= 8)
-                {
-                    stuckCounter[robot] = 0;
-                    AssignNextTask(robot);
-                }
-                continue;
-            }
-
-            if (robot.State != RobotState.Tasked) continue;
-
-            if (robot.IsBlocked)
-            {
-                stuckCounter[robot]++;
-
-                if (stuckCounter[robot] >= 8)
-                {
-                    stuckCounter[robot] = 0;
-
-                    // Si el bloqueo es un robot idle, pedirle que ceda el paso
-                    var blocker = robot.NextIntendedCell?.OccupyingRobot;
-                    if (blocker != null && blocker.State == RobotState.Idle)
-                    {
-                        MoveToParking(blocker);
-                        stuckCounter[blocker] = 0;
-                    }
-                    else
-                    {
-                        // Devolver caja huérfana a la cola antes de replanear
-                        if (assignedCrates.TryGetValue(robot, out var orphan)
-                            && orphan.CurrentCell != null
-                            && !unassignedCrates.Contains(orphan))
-                        {
-                            unassignedCrates.Add(orphan);
-                        }
-                        assignedCrates.Remove(robot);
-
-                        robot.ClearPath();
-                        AssignNextTask(robot);
-                    }
-                }
-            }
-            else
-            {
-                stuckCounter[robot] = 0;
-            }
-        }
+        return System.Math.Abs(a.Row - b.Row) +
+               System.Math.Abs(a.Col - b.Col);
     }
 }

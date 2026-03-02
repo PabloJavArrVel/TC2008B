@@ -48,15 +48,11 @@ public class GameController : MonoBehaviour
 
     void Start()
     {
-        // almacén más grande para acomodar estantes y pasillos
         rows = 20;
         cols = 20;
 
         warehouse = new Warehouse(rows, cols);
-
-        MarkShelves();
-
-        warehouse.Initialize(robotCount, k);
+        warehouse.GenerateWorld(robotCount, k);
 
         manager = new WarehouseManager(warehouse);
         warehouse.Manager = manager;
@@ -68,42 +64,6 @@ public class GameController : MonoBehaviour
         SpawnPerimeterWalls(5f);
         SpawnShelves();
         SpawnVisuals();
-    }
-
-    // =========================
-    // MARCAR CELDAS DE ESTANTES
-    // =========================
-
-    void MarkShelves()
-    {
-        int[] shelfRowIndices = { 3, 6, 9, 12, 15 };
-
-        foreach (int r in shelfRowIndices)
-        {
-            if (r >= rows) continue;
-
-            // Empezamos en 2 y terminamos en cols-3 para dejar pasillos a los lados
-            for (int c = 2; c <= cols - 3; c++)
-            {
-                // Dejamos un pasillo central extra para que fluyan mejor
-                if (c == cols / 2 || c == (cols / 2) - 1) 
-                    continue; 
-
-                warehouse.Grid[r, c].IsShelf = true;
-            }
-        }
-
-        // Marcar bordes como no transitables (paredes)
-        for (int c = 0; c < cols; c++)
-        {
-            warehouse.Grid[0, c].IsShelf = true;
-            warehouse.Grid[rows - 1, c].IsShelf = true;
-        }
-        for (int r = 0; r < rows; r++)
-        {
-            warehouse.Grid[r, 0].IsShelf = true;
-            warehouse.Grid[r, cols - 1].IsShelf = true;
-        }
     }
 
     // =========================
@@ -274,6 +234,10 @@ public class GameController : MonoBehaviour
         ceiling.transform.localScale = new Vector3(cols, 0.1f, rows);
     }
 
+    // =========================
+    // SPAWN WALLS
+    // =========================
+
    void SpawnPerimeterWalls(float y)
     {
         float offset = 90f;
@@ -308,18 +272,25 @@ public class GameController : MonoBehaviour
     {
         if (shelfPrefab == null) return;
 
-        for (int r = 0; r < rows; r++)
-        for (int c = 0; c < cols; c++)
+        for (int r = 0; r < warehouse.Rows; r++)
+        for (int c = 0; c < warehouse.Cols; c++)
         {
-            if (warehouse.Grid[r, c].IsShelf)
-            {
-                // no spawnear en celdas de borde (esas son paredes)
-                if (r == 0 || r == rows - 1 || c == 0 || c == cols - 1)
-                    continue;
+            var cell = warehouse.Grid[r, c];
 
-                var go = Instantiate(shelfPrefab);
-                go.transform.position = new Vector3(c + 0.5f, 0f, r + 0.5f);
-            }
+            // Only render actual shelf cells
+            if (!cell.IsShelf)
+                continue;
+
+            // Skip perimeter (those are logical walls, rendered separately)
+            if (r == 0 || r == warehouse.Rows - 1 ||
+                c == 0 || c == warehouse.Cols - 1)
+                continue;
+
+            Instantiate(
+                shelfPrefab,
+                CellToWorld(cell),
+                Quaternion.identity
+            );
         }
     }
 
