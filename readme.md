@@ -1,5 +1,7 @@
 # Warehouse Robot Simulation
 
+[![Watch the video](https://img.youtube.com/vi/HsBB0t17KBQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=HsBB0t17KBQ)
+
 ## Overview
 
 This project simulates a warehouse environment where multiple robots navigate a grid to collect crates and stack them at designated drop zones. The system models coordination, pathfinding, and conflict resolution between autonomous agents operating in a shared space.
