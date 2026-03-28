@@ -1,6 +1,6 @@
 # Warehouse Robot Simulation
 
-[![Watch the video](https://img.youtube.com/vi/HsBB0t17KBQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=HsBB0t17KBQ)
+
 
 ## Overview
 
@@ -199,7 +199,7 @@ https://polyhaven.com/a/concrete_layers_02
 
 # Running the Simulation
 
-1. Open the project in **Unity 6000.3.9f1**
+1. Open the project in **Unity 6000.4.0f1**
 2. Load the scene:
 
 ```
