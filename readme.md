@@ -1,5 +1,6 @@
 # Warehouse Robot Simulation
 
+[![Watch the video](https://img.youtube.com/vi/HsBB0t17KBQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=HsBB0t17KBQ)
 
 
 ## Overview
